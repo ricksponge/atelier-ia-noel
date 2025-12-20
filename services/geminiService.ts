@@ -2,15 +2,14 @@
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
-  private ai: GoogleGenAI;
-
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-  }
-
+  // On ne définit pas l'instance ici pour éviter de lire process.env trop tôt
+  
   async editImage(base64Data: string, mimeType: string, prompt: string): Promise<string> {
     try {
-      const response = await this.ai.models.generateContent({
+      // Création de l'instance juste avant l'appel (conforme aux recommandations)
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      
+      const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
@@ -42,8 +41,11 @@ export class GeminiService {
       }
 
       return editedImageUrl;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Gemini API Error:", error);
+      if (error?.message?.includes('API key')) {
+        throw new Error("Clé API invalide ou manquante. Vérifiez votre fichier .env.local");
+      }
       throw error;
     }
   }
