@@ -2,12 +2,15 @@
 import { GoogleGenAI } from "@google/genai";
 
 export class GeminiService {
-  // On ne définit pas l'instance ici pour éviter de lire process.env trop tôt
-  
   async editImage(base64Data: string, mimeType: string, prompt: string): Promise<string> {
+    const apiKey = process.env.API_KEY;
+
+    if (!apiKey || apiKey === '') {
+      throw new Error("Clé API manquante. Si vous êtes sur Vercel, vérifiez que vous avez ajouté API_KEY dans Environment Variables et que vous avez REDÉPLOYÉ.");
+    }
+
     try {
-      // Création de l'instance juste avant l'appel (conforme aux recommandations)
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      const ai = new GoogleGenAI({ apiKey });
       
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -37,14 +40,14 @@ export class GeminiService {
       }
 
       if (!editedImageUrl) {
-        throw new Error("Le modèle n'a pas renvoyé d'image modifiée.");
+        throw new Error("L'IA n'a pas pu générer l'image. Essayez un prompt plus simple.");
       }
 
       return editedImageUrl;
     } catch (error: any) {
       console.error("Gemini API Error:", error);
       if (error?.message?.includes('API key')) {
-        throw new Error("Clé API invalide ou manquante. Vérifiez votre fichier .env.local");
+        throw new Error("La clé API fournie est rejetée par Google. Vérifiez sa validité sur aistudio.google.com");
       }
       throw error;
     }
