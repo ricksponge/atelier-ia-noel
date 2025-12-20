@@ -1,14 +1,17 @@
 
-export interface ImageState {
-  originalUrl: string | null;
-  editedUrl: string | null;
-  base64: string | null;
-  mimeType: string | null;
+export interface Gift {
+  id: number;
+  x: number;
+  y: number;
+  rotation: number;
+  scale: number;
+  color: string;
+  speed: number;
 }
 
-export enum AppStatus {
-  IDLE = 'IDLE',
-  LOADING = 'LOADING',
-  SUCCESS = 'SUCCESS',
-  ERROR = 'ERROR'
+export interface Particle {
+  id: number;
+  x: number;
+  y: number;
+  color: string;
 }
