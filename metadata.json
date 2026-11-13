@@ -1,7 +1,0 @@
-{
-  "name": "Festive Hat Editor",
-  "description": "An AI-powered image editor that lets you add Christmas hats and other festive elements to your photos using Gemini 2.5 Flash Image.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}
