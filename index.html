@@ -1,0 +1,339 @@
+<title>Boudin Ball</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap">
+<style>
+/* Mise en page : un bandeau de score au-dessus, la piscine occupe tout le reste de l'écran. */
+:root{
+  --deck:#f3ead8;        /* margelle de la piscine */
+  --deck-line:#d9ccb0;
+  --water:#27b3d6;
+  --water-deep:#1c9cc0;
+  --tile:#ffffff;
+  --ink:#0d3b4a;
+  --ink-soft:#4b6f7a;
+  --orange:#ff7a1a;
+  --orange-light:#ffb070;
+  --green:#6fcf1c;
+  --green-light:#b6f06a;
+  --foam:#ffe45c;
+  --foam-dark:#e0b800;
+  --rope-red:#e5383b;
+  --card:#ffffff;
+  --display:"Fredoka","Trebuchet MS","Segoe UI",system-ui,sans-serif;
+  color-scheme:light;
+}
+html,body{height:100%}
+[hidden]{display:none !important}
+body{
+  background:var(--deck);color:var(--ink);font-family:var(--display);
+  display:flex;flex-direction:column;gap:8px;
+  padding-block:8px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  box-sizing:border-box;overflow:hidden;
+  -webkit-user-select:none;user-select:none;
+}
+.hud{display:flex;align-items:center;gap:10px;min-height:44px}
+.side{display:flex;align-items:center;gap:8px;font-weight:700;font-size:20px;flex:1;min-width:0}
+.side.right{justify-content:flex-end}
+.chip{width:16px;height:16px;border-radius:50%;flex:none}
+.chip.o{background:var(--orange)} .chip.g{background:var(--green)}
+.score{font-size:28px;font-variant-numeric:tabular-nums}
+.status{display:flex;flex-direction:column;align-items:center;gap:4px;flex:none}
+.status span{font-size:14px;font-weight:600;color:var(--ink-soft);white-space:nowrap}
+.pips{display:flex;gap:6px}
+.pip{width:14px;height:14px;border-radius:4px;background:var(--deck-line)}
+.stage{position:relative;flex:1;min-height:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:12px}
+.panel{
+  background:var(--card);color:var(--ink);border-radius:22px;padding:22px 22px 20px;
+  max-width:360px;width:100%;box-sizing:border-box;text-align:center;
+  box-shadow:0 12px 0 rgba(13,59,74,.18);
+  display:flex;flex-direction:column;gap:12px;
+}
+.panel h1{margin:0;font-size:40px;line-height:1;font-weight:700;letter-spacing:-.5px;text-wrap:balance}
+.panel h1 em{font-style:normal;color:var(--orange)}
+.panel p{margin:0;font-size:16px;line-height:1.4;color:var(--ink-soft)}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+button{
+  font:700 18px var(--display);color:var(--ink);background:var(--foam);
+  border:0;border-radius:14px;padding:14px 12px;flex:1;min-width:120px;cursor:pointer;
+  box-shadow:0 4px 0 var(--foam-dark);
+}
+button:active{transform:translateY(3px);box-shadow:0 1px 0 var(--foam-dark)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+button.ghost{background:var(--deck);box-shadow:0 4px 0 var(--deck-line)}
+.keys{font-size:13px !important}
+</style>
+
+<div class="hud">
+  <div class="side"><span class="chip g"></span><span id="nameG">Vert</span><span class="score" id="scoreG">0</span></div>
+  <div class="status"><div class="pips" id="pips"><i class="pip"></i><i class="pip"></i><i class="pip"></i><i class="pip"></i></div><span id="status">Balle libre</span></div>
+  <div class="side right"><span class="score" id="scoreO">0</span><span id="nameO">Orange</span><span class="chip o"></span></div>
+</div>
+<div class="stage" id="stage">
+  <canvas id="c"></canvas>
+  <div class="overlay" id="overlay">
+    <div class="panel">
+      <h1 id="title">Boudin <em>Ball</em></h1>
+      <p id="text">Frappe la balle en mousse avec ton boudin et fais-lui toucher les <b>4 coins</b> de la piscine. Si l'adversaire touche la balle, tes coins sont effacés et c'est à lui de faire les siens.</p>
+      <div class="btns">
+        <button id="b1">1 joueur</button>
+        <button id="b2">2 joueurs</button>
+      </div>
+      <p class="keys" id="keys">Glisse le doigt dans ta moitié pour bouger ton boudin. Au clavier : flèches (Orange), ZQSD (Vert).</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+const W=1000,H=600,M=26,R=44,BR=17,CR=105;
+const CORNERS=[[0,0],[W,0],[W,H],[0,H]];
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL={deck:cssv('--deck'),deckLine:cssv('--deck-line'),water:cssv('--water'),deep:cssv('--water-deep'),
+  tile:cssv('--tile'),foam:cssv('--foam'),foamDark:cssv('--foam-dark'),rope:cssv('--rope-red'),ink:cssv('--ink')};
+// 0 = Orange (bas / droite), 1 = Vert (haut / gauche)
+const P=[
+  {name:'Orange',col:cssv('--orange'),light:cssv('--orange-light'),x:800,y:300,vx:0,vy:0,target:null,speed:1700,face:Math.PI,min:W/2,max:W-R},
+  {name:'Vert',col:cssv('--green'),light:cssv('--green-light'),x:200,y:300,vx:0,vy:0,target:null,speed:1700,face:0,min:R,max:W/2}
+];
+const ball={x:650,y:300,vx:0,vy:0};
+let owner=-1,lit=[false,false,false,false],scores=[0,0],mode=1,state='menu',server=0,ripples=[],lastHit=0;
+
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),stage=document.getElementById('stage');
+const $=id=>document.getElementById(id);
+let cw=300,ch=300,k=1,ox=0,oy=0,portrait=false,dpr=1;
+
+function resize(){
+  const r=stage.getBoundingClientRect();cw=Math.max(50,r.width);ch=Math.max(50,r.height);
+  dpr=Math.min(window.devicePixelRatio||1,2.5);
+  cv.width=Math.round(cw*dpr);cv.height=Math.round(ch*dpr);
+  portrait=ch>cw;
+  const ew=W+2*M,eh=H+2*M;
+  if(portrait){k=Math.min(cw/eh,ch/ew);ox=(cw-H*k)/2;oy=(ch-W*k)/2;}
+  else{k=Math.min(cw/ew,ch/eh);ox=(cw-W*k)/2;oy=(ch-H*k)/2;}
+}
+new ResizeObserver(resize).observe(stage);resize();
+
+function toWorld(e){
+  const r=cv.getBoundingClientRect(),sx=e.clientX-r.left,sy=e.clientY-r.top;
+  return portrait?{x:(sy-oy)/k,y:(sx-ox)/k}:{x:(sx-ox)/k,y:(sy-oy)/k};
+}
+
+// ---- Son ----
+let ac=null;
+function beep(f,d,type,vol){
+  if(!ac)return;try{
+    const o=ac.createOscillator(),g=ac.createGain();o.type=type||'sine';o.frequency.value=f;
+    g.gain.setValueAtTime(vol||.12,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+d);
+    o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d);
+  }catch(_){}
+}
+
+// ---- Entrées ----
+const ptr=new Map(),keys={};
+function whoAt(w){return mode===1?0:(w.x>=W/2?0:1);}
+cv.addEventListener('pointerdown',e=>{
+  if(state!=='play')return;
+  const w=toWorld(e),i=whoAt(w);ptr.set(e.pointerId,i);P[i].target=w;
+  try{cv.setPointerCapture(e.pointerId);}catch(_){}
+  e.preventDefault();
+});
+cv.addEventListener('pointermove',e=>{
+  if(state!=='play')return;
+  const w=toWorld(e);
+  if(ptr.has(e.pointerId))P[ptr.get(e.pointerId)].target=w;
+  else if(e.pointerType==='mouse')P[whoAt(w)].target=w;
+});
+function up(e){if(ptr.has(e.pointerId)){const i=ptr.get(e.pointerId);ptr.delete(e.pointerId);if(e.pointerType!=='mouse')P[i].target=null;}}
+cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code.startsWith('Arrow'))e.preventDefault();});
+addEventListener('keyup',e=>{keys[e.code]=false;});
+
+function keyDir(i){
+  let dx=0,dy=0;
+  const arrows=mode===1||i===0,wasd=mode===1||i===1;
+  if(arrows){dx+=(keys.ArrowRight?1:0)-(keys.ArrowLeft?1:0);dy+=(keys.ArrowDown?1:0)-(keys.ArrowUp?1:0);}
+  if(wasd){dx+=(keys.KeyD?1:0)-(keys.KeyA?1:0);dy+=(keys.KeyS?1:0)-(keys.KeyW?1:0);}
+  return portrait?{x:dy,y:dx}:{x:dx,y:dy};
+}
+
+// ---- Logique ----
+function movePaddle(i,dt){
+  const p=P[i];let nx=p.x,ny=p.y;
+  const human=!(mode===1&&i===1),kd=human?keyDir(i):{x:0,y:0};
+  if(kd.x||kd.y){
+    p.target=null;const l=Math.hypot(kd.x,kd.y);nx+=kd.x/l*680*dt;ny+=kd.y/l*680*dt;
+  }else if(p.target){
+    const dx=p.target.x-p.x,dy=p.target.y-p.y,d=Math.hypot(dx,dy),m=p.speed*dt;
+    if(d<=m){nx=p.target.x;ny=p.target.y;}else{nx+=dx/d*m;ny+=dy/d*m;}
+  }
+  nx=Math.max(p.min,Math.min(p.max,nx));ny=Math.max(R,Math.min(H-R,ny));
+  p.vx=(nx-p.x)/dt;p.vy=(ny-p.y)/dt;p.x=nx;p.y=ny;
+}
+
+function ai(){
+  const p=P[1];
+  if(ball.x<W/2+50||(ball.vx<-60&&ball.x<W*.72)){
+    let best=null,bd=1e9;
+    CORNERS.forEach((c,i)=>{if(owner===1&&lit[i])return;const d=Math.hypot(c[0]-ball.x,c[1]-ball.y);if(d<bd){bd=d;best=c;}});
+    if(!best)best=CORNERS[1];
+    let dx=best[0]-ball.x,dy=best[1]-ball.y;const l=Math.hypot(dx,dy)||1;dx/=l;dy/=l;
+    const bx=Math.max(p.min,Math.min(p.max,ball.x-dx*(R+BR+16))),by=Math.max(R,Math.min(H-R,ball.y-dy*(R+BR+16)));
+    const tx=ball.x-p.x,ty=ball.y-p.y,td=Math.hypot(tx,ty)||1;
+    const aligned=(tx*dx+ty*dy)/td>.82;
+    if((aligned&&td<190)||Math.hypot(bx-p.x,by-p.y)<10){p.target={x:ball.x+dx*40,y:ball.y+dy*40};p.speed=760;}
+    else{p.target={x:bx,y:by};p.speed=470;}
+  }else{
+    p.target={x:210,y:Math.max(110,Math.min(H-110,ball.y))};p.speed=380;
+  }
+}
+
+function touch(i){
+  if(owner!==i){owner=i;lit=[false,false,false,false];}
+  const now=performance.now();
+  if(now-lastHit>70){beep(i===0?330:262,.09,'triangle',.16);ripples.push({x:ball.x,y:ball.y,t:0,col:P[i].light});}
+  lastHit=now;
+}
+
+function stepBall(dt){
+  ball.x+=ball.vx*dt;ball.y+=ball.vy*dt;
+  for(let i=0;i<2;i++){
+    const p=P[i],dx=ball.x-p.x,dy=ball.y-p.y,d=Math.hypot(dx,dy),min=R+BR;
+    if(d<min){
+      const nx=d>0.001?dx/d:(i===0?-1:1),ny=d>0.001?dy/d:0;
+      const rv=(ball.vx-p.vx)*nx+(ball.vy-p.vy)*ny;
+      if(rv<0){ball.vx-=1.85*rv*nx;ball.vy-=1.85*rv*ny;}
+      const out=ball.vx*nx+ball.vy*ny;
+      if(out<230){ball.vx+=(230-out)*nx;ball.vy+=(230-out)*ny;}
+      ball.x=p.x+nx*min;ball.y=p.y+ny*min;
+      touch(i);
+    }
+  }
+  if(ball.x<BR){ball.x=BR;ball.vx=Math.abs(ball.vx)*.88;}
+  if(ball.x>W-BR){ball.x=W-BR;ball.vx=-Math.abs(ball.vx)*.88;}
+  if(ball.y<BR){ball.y=BR;ball.vy=Math.abs(ball.vy)*.88;}
+  if(ball.y>H-BR){ball.y=H-BR;ball.vy=-Math.abs(ball.vy)*.88;}
+  const s=Math.hypot(ball.vx,ball.vy);
+  if(s>1500){ball.vx*=1500/s;ball.vy*=1500/s;}
+  if(owner>=0){
+    for(let c=0;c<4;c++){
+      if(!lit[c]&&Math.hypot(ball.x-CORNERS[c][0],ball.y-CORNERS[c][1])<CR){
+        lit[c]=true;const n=lit.filter(Boolean).length;beep(440+n*110,.18,'sine',.18);
+        ripples.push({x:CORNERS[c][0],y:CORNERS[c][1],t:0,col:P[owner].light,big:true});
+        if(n===4){win(owner);return;}
+      }
+    }
+  }
+}
+
+function update(dt){
+  if(mode===1)ai();
+  movePaddle(0,dt);movePaddle(1,dt);
+  const n=4,h=dt/n;
+  for(let i=0;i<n&&state==='play';i++)stepBall(h);
+  const drag=Math.exp(-.42*dt);ball.vx*=drag;ball.vy*=drag;
+}
+
+function newRound(){
+  ball.x=server===0?660:340;ball.y=H/2;ball.vx=0;ball.vy=0;
+  P[0].x=840;P[0].y=H/2;P[1].x=160;P[1].y=H/2;
+  P.forEach(p=>{p.target=null;p.vx=p.vy=0;p.speed=1700;});
+  owner=-1;lit=[false,false,false,false];ripples=[];ptr.clear();
+  state='play';$('overlay').hidden=true;hud();
+}
+function win(i){
+  state='over';scores[i]++;server=1-i;
+  [523,659,784,1047].forEach((f,j)=>setTimeout(()=>beep(f,.25,'triangle',.18),j*110));
+  $('title').innerHTML=(mode===1?(i===0?'Gagné&nbsp;!':'Perdu…'):P[i].name+' gagne&nbsp;!');
+  $('text').textContent='Les 4 coins sont faits par '+P[i].name+'. Score : Vert '+scores[1]+' – '+scores[0]+' Orange.';
+  $('b1').textContent='Revanche';$('b2').textContent='Menu';$('b2').className='ghost';
+  $('keys').hidden=true;$('overlay').hidden=false;hud();
+}
+function menu(){
+  state='menu';scores=[0,0];server=0;
+  $('title').innerHTML='Boudin <em>Ball</em>';
+  $('text').innerHTML="Frappe la balle en mousse avec ton boudin et fais-lui toucher les <b>4 coins</b> de la piscine. Si l'adversaire touche la balle, tes coins sont effacés et c'est à lui de faire les siens.";
+  $('b1').textContent='1 joueur';$('b2').textContent='2 joueurs';$('b2').className='';
+  $('keys').hidden=false;$('overlay').hidden=false;hud();
+}
+function audio(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)();}catch(_){}}if(ac&&ac.state==='suspended')ac.resume();}
+$('b1').addEventListener('click',()=>{audio();if(state==='menu'){mode=1;}newRound();});
+$('b2').addEventListener('click',()=>{audio();if(state==='menu'){mode=2;newRound();}else menu();});
+
+let hudKey='';
+function hud(){
+  const n=lit.filter(Boolean).length,key=[owner,n,scores,mode,state].join();
+  if(key===hudKey)return;hudKey=key;
+  $('scoreO').textContent=scores[0];$('scoreG').textContent=scores[1];
+  $('nameO').textContent=mode===1?'Toi':'Orange';$('nameG').textContent=mode===1?'Ordi':'Vert';
+  $('status').textContent=owner<0?'Balle libre':(P[owner].name+' : '+n+'/4 coins');
+  [...$('pips').children].forEach((el,i)=>{el.style.background=owner>=0&&i<n?P[owner].col:'';});
+}
+
+// ---- Dessin ----
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function draw(t){
+  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=COL.deck;ctx.fillRect(0,0,cv.width,cv.height);
+  if(portrait)ctx.setTransform(0,k*dpr,k*dpr,0,ox*dpr,oy*dpr);else ctx.setTransform(k*dpr,0,0,k*dpr,ox*dpr,oy*dpr);
+  // margelle + eau
+  ctx.fillStyle=COL.tile;rr(-M+4,-M+4,W+2*M-8,H+2*M-8,26);ctx.fill();
+  ctx.strokeStyle=COL.deckLine;ctx.lineWidth=3;ctx.stroke();
+  ctx.fillStyle=COL.water;rr(0,0,W,H,10);ctx.fill();
+  ctx.save();rr(0,0,W,H,10);ctx.clip();
+  // carrelage du fond
+  ctx.strokeStyle='rgba(255,255,255,.13)';ctx.lineWidth=2;ctx.beginPath();
+  for(let x=50;x<W;x+=50){ctx.moveTo(x,0);ctx.lineTo(x,H);}
+  for(let y=50;y<H;y+=50){ctx.moveTo(0,y);ctx.lineTo(W,y);}
+  ctx.stroke();
+  // reflets
+  ctx.strokeStyle='rgba(255,255,255,.22)';ctx.lineWidth=5;ctx.lineCap='round';
+  for(let i=0;i<9;i++){
+    const wx=(i*127+60)%W,wy=(i*211+90)%H,s=Math.sin(t/900+i)*14;
+    ctx.beginPath();ctx.moveTo(wx-30+s,wy);ctx.quadraticCurveTo(wx+s,wy-10,wx+30+s,wy);ctx.stroke();
+  }
+  // coins
+  for(let c=0;c<4;c++){
+    const [cx,cy]=CORNERS[c];
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.arc(cx,cy,CR,0,Math.PI*2);ctx.closePath();
+    if(lit[c]&&owner>=0){ctx.fillStyle=P[owner].col;ctx.globalAlpha=.85;ctx.fill();ctx.globalAlpha=1;}
+    else{ctx.fillStyle='rgba(255,255,255,.2)';ctx.fill();
+      ctx.setLineDash([12,10]);ctx.strokeStyle='rgba(255,255,255,.75)';ctx.lineWidth=4;
+      ctx.beginPath();ctx.arc(cx,cy,CR,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+  }
+  // ligne d'eau à flotteurs
+  for(let y=10,i=0;y<H;y+=20,i++){ctx.fillStyle=i%2?COL.tile:COL.rope;rr(W/2-5,y-8,10,16,5);ctx.fill();}
+  // ondes
+  ripples.forEach(r=>{const a=1-r.t;ctx.globalAlpha=Math.max(0,a)*.8;ctx.strokeStyle=r.col;ctx.lineWidth=5;
+    ctx.beginPath();ctx.arc(r.x,r.y,(r.big?CR:30)+r.t*(r.big?60:70),0,Math.PI*2);ctx.stroke();});
+  ctx.globalAlpha=1;ctx.restore();
+  // boudins pliés en deux
+  P.forEach(p=>{
+    ctx.lineCap='round';
+    ctx.strokeStyle='rgba(13,59,74,.22)';ctx.lineWidth=26;
+    ctx.beginPath();ctx.arc(p.x+5,p.y+7,30,p.face-1.9,p.face+1.9);ctx.stroke();
+    ctx.strokeStyle=p.col;ctx.lineWidth=26;
+    ctx.beginPath();ctx.arc(p.x,p.y,30,p.face-1.9,p.face+1.9);ctx.stroke();
+    ctx.strokeStyle=p.light;ctx.lineWidth=7;
+    ctx.beginPath();ctx.arc(p.x,p.y,35,p.face-1.6,p.face+1.6);ctx.stroke();
+  });
+  // balle en mousse
+  ctx.fillStyle='rgba(13,59,74,.22)';ctx.beginPath();ctx.arc(ball.x+4,ball.y+6,BR,0,7);ctx.fill();
+  ctx.fillStyle=COL.foam;ctx.beginPath();ctx.arc(ball.x,ball.y,BR,0,7);ctx.fill();
+  ctx.fillStyle=COL.foamDark;
+  [[-6,-4],[5,-7],[7,4],[-3,7],[0,0]].forEach(d=>{ctx.beginPath();ctx.arc(ball.x+d[0],ball.y+d[1],1.8,0,7);ctx.fill();});
+  ctx.lineWidth=5;ctx.strokeStyle=owner>=0?P[owner].col:COL.tile;ctx.beginPath();ctx.arc(ball.x,ball.y,BR+1,0,7);ctx.stroke();
+}
+
+let last=performance.now();
+function frame(t){
+  const dt=Math.min(.033,Math.max(.001,(t-last)/1000));last=t;
+  if(state==='play'){update(dt);hud();}
+  ripples.forEach(r=>r.t+=dt*1.8);ripples=ripples.filter(r=>r.t<1);
+  draw(t);requestAnimationFrame(frame);
+}
+hud();requestAnimationFrame(frame);
+})();
+</script>
